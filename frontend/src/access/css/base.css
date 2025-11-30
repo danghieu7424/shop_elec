@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-light: #f8f9fa;
+  --bg-dark: #121212;
+  --bg-color: #121212;
+  --text-light: #212529;
+  --text-dark: #e0e0e0;
+  --primary-light: #007bff;
+  --primary-dark: #1e90ff;
+  --header-bg: #121212aa;
+
+  --border-dark: #313131;
+  --border-light: #e0e0e0;
+
+  /* Độ trong suốt cho light mode */
+  --light-5: rgba(248, 249, 250, 0.05);
+  --light-10: rgba(248, 249, 250, 0.1);
+  --light-30: rgba(248, 249, 250, 0.3);
+  --light-60: rgba(248, 249, 250, 0.6);
+  --light-100: rgba(248, 249, 250, 1);
+
+  /* Độ trong suốt cho dark mode */
+  --dark-5: rgba(18, 18, 18, 0.05);
+  --dark-10: rgba(18, 18, 18, 0.1);
+  --dark-30: rgba(18, 18, 18, 0.3);
+  --dark-60: rgba(18, 18, 18, 0.6);
+  --dark-100: rgba(18, 18, 18, 1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  /* color-scheme: dark; */
+  scrollbar-width: thin;
+  scrollbar-color: light-dark(rgba(0, 0, 0, 0.4),rgba(255, 255, 255, 0.4)) transparent;
+}
+
+body {
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  background: light-dark(var(--bg-light), var(--bg-dark));
+}
+
+.page-container {
+  position: relative;
+  top: calc(4rem);
+  width: 100%;
+  /* min-width: 700px; */
+  height: calc(100dvh - 4rem);
+}
+
+svg {
+  border: none
+}

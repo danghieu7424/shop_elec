@@ -1,0 +1,56 @@
+@font-face {
+    font-family: "K2D";
+    src: url('../K2D/K2D-Regular.ttf');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Grand_Hotel";
+    src: url('../Grand_Hotel/GrandHotel-Regular.ttf');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Poppins";
+    src: url('../Poppins/Poppins-Regular.ttf');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Roboto_both";
+    src: url('../Roboto/Roboto-Regular.ttf');
+    font-weight: 100;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Roboto";
+    src: url('../Roboto/Roboto-Regular.ttf');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "inter";
+    src: url('../inter/Inter_24pt-Regular.ttf');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "inter-bold";
+    src: url('../inter/Inter_24pt-SemiBold.ttf');
+    font-weight: 900;
+    font-style: normal;
+    font-display: swap;
+}
+
