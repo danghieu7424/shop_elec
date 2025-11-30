@@ -36,6 +36,9 @@ pub struct UserResponse {
     pub status: String,
     pub points: i32,
     pub level: String,
+    // --- THÊM 2 DÒNG NÀY ---
+    pub phone: Option<String>,
+    pub address: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -233,7 +236,7 @@ async fn generate_jwt_response(
         .max_age(Duration::hours(1));
 
     let full_info = sqlx::query_as::<_, UserResponse>(
-        "SELECT id, email, name, picture, role, status, points, level
+        "SELECT id, email, name, picture, role, status, points, level, phone, address
          FROM users WHERE id = ?"
     )
     .bind(user.id)
@@ -253,7 +256,7 @@ async fn get_me(
     auth: AuthUser
 ) -> impl IntoResponse {
     let user = sqlx::query_as::<_, UserResponse>(
-        "SELECT id, email, name, picture, role, status, points, level
+        "SELECT id, email, name, picture, role, status, points, level, phone, address
          FROM users WHERE id = ?"
     )
     .bind(auth.user_id)
