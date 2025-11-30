@@ -220,7 +220,7 @@ async fn delete_product(
 
 async fn get_all_users(State(state): State<AppState>, _: AdminUser) -> impl IntoResponse {
     let users = sqlx::query_as::<_, crate::routes::auth::UserResponse>(
-        "SELECT id, email, name, picture, role, status, points, level FROM users"
+        "SELECT id, email, name, picture, role, status, points, level, phone, address FROM users"
     )
     .fetch_all(&state.db).await;
     
