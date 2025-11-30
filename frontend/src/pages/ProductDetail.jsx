@@ -16,29 +16,46 @@ export default function ProductDetail() {
     const [quantity, setQuantity] = useState(1);
     const [activeTab, setActiveTab] = useState('desc');
     
+    // State quản lý ảnh đang hiển thị (cho tính năng nhiều ảnh)
+    const [activeImg, setActiveImg] = useState(null);
+
     // State cho Form đánh giá
     const [newRating, setNewRating] = useState(5);
     const [newComment, setNewComment] = useState('');
     const [submitting, setSubmitting] = useState(false);
 
-    // 1. Fetch Dữ liệu (Sản phẩm + Đánh giá)
+    // Helper xử lý danh sách ảnh an toàn
+    const getProductImages = (prod) => {
+        if (!prod) return [];
+        if (Array.isArray(prod.images) && prod.images.length > 0) return prod.images;
+        if (typeof prod.image === 'string' && prod.image) return [prod.image];
+        return [];
+    };
+
+    // 1. Fetch Dữ liệu
     useEffect(() => {
         const loadData = async () => {
             try {
-                // Gọi song song 2 API để tiết kiệm thời gian
                 const [prodRes, revRes] = await Promise.all([
                     fetch(`${domain}/api/products/${id}`),
                     fetch(`${domain}/api/reviews/${id}`)
                 ]);
 
-                if (prodRes.ok) setProduct(await prodRes.json());
+                if (prodRes.ok) {
+                    const prodData = await prodRes.json();
+                    setProduct(prodData);
+                    
+                    // Tự động chọn ảnh đầu tiên làm ảnh chính
+                    const imgs = getProductImages(prodData);
+                    if (imgs.length > 0) setActiveImg(imgs[0]);
+                }
                 if (revRes.ok) setReviews(await revRes.json());
             } catch (e) { console.error("Lỗi tải chi tiết:", e); }
         };
         loadData();
     }, [id, domain]);
 
-    // 2. Xử lý Gửi đánh giá
+    // ... (Giữ nguyên các hàm xử lý Review, Quantity...)
     const handlePostReview = async () => {
         if (!userInfo) return alert("Vui lòng đăng nhập để đánh giá");
         if (!newComment.trim()) return alert("Vui lòng nhập nội dung");
@@ -60,8 +77,6 @@ export default function ProductDetail() {
                 alert("Cảm ơn đánh giá của bạn!");
                 setNewComment('');
                 setNewRating(5);
-                
-                // Reload dữ liệu để cập nhật số sao trung bình và list review mới
                 const [revRes, prodRes] = await Promise.all([
                     fetch(`${domain}/api/reviews/${id}`),
                     fetch(`${domain}/api/products/${id}`)
@@ -75,7 +90,6 @@ export default function ProductDetail() {
         setSubmitting(false);
     };
 
-    // Cấu hình giảm giá theo số lượng
     const BULK_PRICING = [
         { min: 1, max: 9, discount: 0 },
         { min: 10, max: 49, discount: 5 },
@@ -84,49 +98,73 @@ export default function ProductDetail() {
     
     if (!product) return <div className="p-20 text-center text-gray-500">Đang tải thông tin sản phẩm...</div>;
     
-    // Logic tăng giảm số lượng
     const handleQuantityChange = (delta) => {
         const newQty = quantity + delta;
         if (newQty >= 1 && newQty <= product.stock) setQuantity(newQty);
     };
 
-    // Tính giá tiền
     const currentDiscount = BULK_PRICING.find(tier => quantity >= tier.min && quantity <= tier.max)?.discount || 0;
     const unitPrice = Number(product.price);
     const discountedUnitPrice = unitPrice * (1 - currentDiscount / 100);
     const totalPrice = discountedUnitPrice * quantity;
 
-    // Thêm vào giỏ
     const handleAddToCart = () => {
-        dispatch(actions.add_to_cart({ ...product, quantity: quantity }));
+        // Lưu ý: Gửi thêm trường image để hiển thị trong giỏ hàng
+        dispatch(actions.add_to_cart({ 
+            ...product, 
+            image: activeImg, // Dùng ảnh đang chọn làm thumbnail
+            quantity: quantity 
+        }));
         alert(`Đã thêm ${quantity} sản phẩm vào giỏ hàng!`);
     };
 
-    // Parse specs từ JSON object sang mảng để hiển thị
     const specsArray = product.specs 
         ? Object.entries(product.specs).map(([key, value]) => ({ label: key, value: String(value) }))
         : [];
 
+    const productImages = getProductImages(product);
+
     return (
         <div className="container mx-auto px-4 py-8">
-            <Button onClick={() => navigate(-1)} variant="secondary" className="mb-6 text-sm">← Quay lại</Button>
+            <Button onClick={() => navigate(-1)} variant="secondary" className="mb-6 text-sm">← Quay lại danh sách</Button>
             
             <div className="grid md:grid-cols-12 gap-8 mb-12">
-                {/* --- Cột Trái: Ảnh Sản Phẩm --- */}
+                
+                {/* --- CẬP NHẬT CỘT TRÁI: GALLERY ẢNH --- */}
                 <div className="md:col-span-5">
-                    <div className="bg-white rounded-2xl border p-4 flex items-center justify-center mb-4 relative overflow-hidden group">
+                    {/* Ảnh Chính (Lớn) */}
+                    <div className="bg-white rounded-2xl border p-4 flex items-center justify-center mb-4 relative overflow-hidden group h-[400px]">
                         <img 
-                            src={product.image || "https://placehold.co/500"} 
-                            className="max-w-full max-h-[400px] object-contain transition-transform duration-500 group-hover:scale-110" 
+                            src={activeImg ? `${domain}${activeImg}` : "https://placehold.co/500"} 
+                            className="max-w-full max-h-full object-contain transition-transform duration-500 group-hover:scale-110" 
                             alt={product.name}
                         />
                         {product.stock === 0 && (
                             <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white font-bold text-xl uppercase">Hết hàng</div>
                         )}
                     </div>
+
+                    {/* Danh sách Thumbnail (Nhỏ) */}
+                    {productImages.length > 1 && (
+                        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300">
+                            {productImages.map((img, idx) => (
+                                <div 
+                                    key={idx} 
+                                    onClick={() => setActiveImg(img)}
+                                    className={`w-20 h-20 flex-shrink-0 border rounded-lg overflow-hidden cursor-pointer p-1 bg-white transition-all ${activeImg === img ? 'border-blue-600 ring-1 ring-blue-600' : 'border-gray-200 hover:border-blue-400'}`}
+                                >
+                                    <img 
+                                        src={`${domain}${img}`} 
+                                        className="w-full h-full object-contain" 
+                                        alt={`thumb-${idx}`}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
-                {/* --- Cột Phải: Thông tin & Mua hàng --- */}
+                {/* --- Cột Phải (Thông tin) --- */}
                 <div className="md:col-span-7 space-y-6">
                     <div>
                         <div className="flex justify-between items-start">
@@ -137,7 +175,6 @@ export default function ProductDetail() {
                         </div>
                         <h1 className="text-3xl font-bold mt-2 text-gray-800">{product.name}</h1>
                         
-                        {/* Hiển thị Rating Tổng */}
                         <div className="flex items-center gap-2 mt-2">
                             <div className="flex text-yellow-400">
                                 <span className="font-bold mr-1 text-gray-700">{Number(product.rating || 0).toFixed(1)}</span>
@@ -147,7 +184,7 @@ export default function ProductDetail() {
                         </div>
                     </div>
 
-                    {/* Khung Giá & Giá sỉ */}
+                    {/* Giá & Giá sỉ */}
                     <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
                         <div className="text-3xl text-blue-700 font-bold flex items-end gap-2">
                             {formatCurrency(discountedUnitPrice)}
@@ -168,7 +205,7 @@ export default function ProductDetail() {
                         </div>
                     </div>
 
-                    {/* Bộ chọn số lượng & Nút mua */}
+                    {/* Chọn số lượng */}
                     <div className="flex flex-col sm:flex-row gap-4 pt-4 border-t">
                         <div className="flex items-center border rounded-lg w-fit bg-white">
                             <button onClick={() => handleQuantityChange(-1)} className="p-3 hover:bg-gray-100 disabled:opacity-50" disabled={quantity <= 1}><Minus size={18}/></button>
@@ -191,7 +228,7 @@ export default function ProductDetail() {
                 </div>
             </div>
 
-            {/* --- KHU VỰC TABS --- */}
+            {/* --- KHU VỰC TABS (Giữ nguyên code cũ) --- */}
             <div className="bg-white rounded-xl border shadow-sm overflow-hidden mt-12">
                 <div className="flex border-b overflow-x-auto">
                     {['desc', 'specs', 'reviews'].map(tab => (
@@ -206,14 +243,12 @@ export default function ProductDetail() {
                 </div>
 
                 <div className="p-6 md:p-8 min-h-[300px]">
-                    {/* Tab 1: Mô tả */}
                     {activeTab === 'desc' && (
                         <div className="prose max-w-none text-gray-700 whitespace-pre-line leading-relaxed">
                             {product.description || "Chưa có mô tả chi tiết cho sản phẩm này."}
                         </div>
                     )}
 
-                    {/* Tab 2: Thông số kỹ thuật */}
                     {activeTab === 'specs' && (
                         <div>
                             {specsArray.length > 0 ? (
@@ -233,10 +268,8 @@ export default function ProductDetail() {
                         </div>
                     )}
 
-                    {/* Tab 3: Đánh giá & Bình luận */}
                     {activeTab === 'reviews' && (
                         <div>
-                            {/* Form Viết đánh giá */}
                             <div className="bg-gray-50 p-6 rounded-lg mb-8 border shadow-sm">
                                 <h3 className="font-bold mb-4 text-lg">Viết đánh giá của bạn</h3>
                                 {userInfo ? (
@@ -270,7 +303,6 @@ export default function ProductDetail() {
                                 )}
                             </div>
 
-                            {/* Danh sách Review */}
                             <div className="space-y-6">
                                 {reviews.length === 0 ? (
                                     <div className="text-center text-gray-500 py-10 bg-gray-50 rounded-lg border border-dashed">Chưa có đánh giá nào. Hãy là người đầu tiên!</div>

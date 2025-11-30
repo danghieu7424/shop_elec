@@ -260,35 +260,51 @@ export default function Admin() {
   };
 
   const saveProduct = async () => {
-    // 1. Chuẩn bị dữ liệu specs và images
+    // 1. Convert mảng specs thành object
     const specsObject = prodForm.specs.reduce((acc, curr) => {
       if (curr.key) acc[curr.key] = curr.value;
       return acc;
     }, {});
 
-    const payload = { ...prodForm, specs: specsObject };
+    // 2. CHUẨN HÓA DỮ LIỆU (QUAN TRỌNG)
+    // React input trả về string, cần ép về số để Rust không báo lỗi 422
+    const payload = {
+      category_id: prodForm.category_id,
+      name: prodForm.name,
+      description: prodForm.description,
+      images: prodForm.images,
 
-    // 2. LOGIC QUAN TRỌNG: Kiểm tra xem đang Sửa hay Thêm mới
-    const isEditing = !!prodForm.id; // Nếu có ID là đang sửa
+      // Ép kiểu số
+      price: Number(prodForm.price) || 0,
+      stock: Number(prodForm.stock) || 0,
+
+      specs: specsObject,
+    };
+
+    // 3. Xác định Method và URL
+    const isEditing = !!prodForm.id;
     const method = isEditing ? "PUT" : "POST";
     const url = isEditing
-      ? `${domain}/api/admin/products/${prodForm.id}` // API Sửa
-      : `${domain}/api/admin/products`; // API Thêm
+      ? `${domain}/api/admin/products/${prodForm.id}`
+      : `${domain}/api/admin/products`;
 
     try {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload), // Gửi payload đã chuẩn hóa
         credentials: "include",
       });
 
       if (res.ok) {
         alert(isEditing ? "Cập nhật thành công!" : "Thêm mới thành công!");
         setIsEditingProd(false);
-        fetchData("products"); // Tải lại danh sách để thấy thay đổi
+        fetchData("products");
       } else {
-        alert("Lỗi khi lưu sản phẩm");
+        // In ra lỗi cụ thể nếu backend trả về
+        const errText = await res.text();
+        console.error("Lỗi server:", errText);
+        alert("Lỗi khi lưu sản phẩm: " + res.status);
       }
     } catch (e) {
       console.error(e);
