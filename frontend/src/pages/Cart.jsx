@@ -7,8 +7,59 @@ import { formatCurrency, LEVELS } from "../utils";
 
 export default function Cart() {
   const [state, dispatch] = useStore();
-  const { cart, userInfo } = state;
+  const { cart, userInfo, domain } = state; // Lấy domain để gọi API
   const navigate = useNavigate();
+
+  // --- HÀM MỚI: Cập nhật số lượng ---
+  const handleUpdateQuantity = async (itemId, delta) => {
+    const item = cart.find((i) => i.id === itemId);
+    if (!item) return;
+
+    const newQty = item.quantity + delta;
+
+    // 1. Cập nhật UI
+    if (newQty > 0) {
+      dispatch(actions.update_cart_quantity({ id: itemId, delta }));
+    } else {
+      // Nếu giảm về 0 thì hỏi xóa
+      handleRemoveItem(itemId);
+      return;
+    }
+
+    // 2. Cập nhật Database (nếu đã login)
+    if (userInfo && newQty > 0) {
+      try {
+        await fetch(`${domain}/api/cart`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ product_id: itemId, quantity: newQty }),
+          credentials: "include",
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  // --- HÀM MỚI: Xóa sản phẩm ---
+  const handleRemoveItem = async (itemId) => {
+    if (!window.confirm("Bạn muốn xóa sản phẩm này?")) return;
+
+    // 1. Cập nhật UI
+    dispatch(actions.remove_from_cart(itemId));
+
+    // 2. Cập nhật Database
+    if (userInfo) {
+      try {
+        await fetch(`${domain}/api/cart/${itemId}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
 
   const calculateTotal = () => {
     const subtotal = cart.reduce(
@@ -48,7 +99,11 @@ export default function Cart() {
                 className="bg-white p-4 border rounded flex gap-4 items-center"
               >
                 <img
-                  src={item.image || "https://placehold.co/100"}
+                  src={
+                    item.image
+                      ? `${domain}${item.image}`
+                      : "https://placehold.co/100"
+                  }
                   className="w-16 h-16 object-contain bg-gray-100 rounded"
                   alt={item.name}
                 />
@@ -59,31 +114,25 @@ export default function Cart() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* SỬA: Gọi hàm handleUpdateQuantity */}
                   <button
-                    onClick={() =>
-                      dispatch(
-                        actions.update_cart_quantity({ id: item.id, delta: -1 })
-                      )
-                    }
-                    className="p-1 bg-gray-100 rounded"
+                    onClick={() => handleUpdateQuantity(item.id, -1)}
+                    className="p-1 bg-gray-100 rounded hover:bg-gray-200"
                   >
                     <Minus size={14} />
                   </button>
-                  <span>{item.quantity}</span>
+                  <span className="w-8 text-center">{item.quantity}</span>
                   <button
-                    onClick={() =>
-                      dispatch(
-                        actions.update_cart_quantity({ id: item.id, delta: 1 })
-                      )
-                    }
-                    className="p-1 bg-gray-100 rounded"
+                    onClick={() => handleUpdateQuantity(item.id, 1)}
+                    className="p-1 bg-gray-100 rounded hover:bg-gray-200"
                   >
                     <Plus size={14} />
                   </button>
                 </div>
+                {/* SỬA: Gọi hàm handleRemoveItem */}
                 <button
-                  onClick={() => dispatch(actions.remove_from_cart(item.id))}
-                  className="text-red-500"
+                  onClick={() => handleRemoveItem(item.id)}
+                  className="text-red-500 hover:text-red-700 p-2"
                 >
                   <Trash2 size={18} />
                 </button>
@@ -98,7 +147,7 @@ export default function Cart() {
                 <span>{formatCurrency(subtotal)}</span>
               </div>
               <div className="flex justify-between text-green-600">
-                <span>Giảm giá:</span>
+                <span>Giảm giá ({userInfo?.level || "BRONZE"}):</span>
                 <span>-{formatCurrency(discountAmount)}</span>
               </div>
               <div className="flex justify-between font-bold text-lg pt-2 border-t">

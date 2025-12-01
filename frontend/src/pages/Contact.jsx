@@ -17,7 +17,7 @@ export default function Contact() {
               </div>
               <div className="flex items-center gap-4">
                 <MapPin className="text-blue-600"/>
-                <span className="font-medium">Cầu Giấy, Hà Nội</span>
+                <span className="font-medium">Hưng Yên</span>
               </div>
               
               <form className="space-y-4 pt-4 border-t">

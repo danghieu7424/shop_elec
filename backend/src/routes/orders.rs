@@ -1,21 +1,19 @@
 use axum::{
-    extract::{ State, Json, Path },
-    Router,
-    routing::{ post, get, put },
+    extract::{State, Json, Path},
+    Router, routing::{post, get, put},
     http::StatusCode,
     response::IntoResponse,
 };
 use crate::AppState;
 use crate::routes::auth::AuthUser;
 use crate::utils::suid;
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
-use crate::utils::email::send_order_completed_email;
+use crate::utils::email::send_order_thank_you_email;
 
 // --- STRUCTS ---
-
 #[derive(Deserialize)]
 pub struct OrderItemRequest {
     pub product_id: String,
@@ -51,109 +49,125 @@ pub struct OrderHistory {
 async fn create_order(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(payload): Json<CreateOrderRequest>
+    Json(payload): Json<CreateOrderRequest>,
 ) -> impl IntoResponse {
+    // Tính tổng tiền
     let mut total_amount = Decimal::new(0, 0);
     for item in &payload.items {
         total_amount += item.price * Decimal::from(item.quantity);
     }
-
-    // Giả lập discount (thực tế cần query từ user level)
-    let discount_amount = Decimal::new(0, 0);
+    
+    let discount_amount = Decimal::new(0, 0); 
     let final_amount = total_amount - discount_amount;
     let points_earned = (final_amount.to_f64().unwrap_or(0.0) / 1000.0) as i32;
 
     let mut tx = match state.db.begin().await {
         Ok(tx) => tx,
-        Err(_) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi transaction")).into_response();
-        }
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi transaction")).into_response(),
     };
 
     let order_id = suid();
 
     // 1. Insert Order
-    let order_insert = sqlx
-        ::query(
-            "INSERT INTO orders (id, user_id, total_amount, discount_amount, final_amount, points_earned, shipping_name, shipping_phone, shipping_address, note) 
+    let order_insert = sqlx::query(
+        "INSERT INTO orders (id, user_id, total_amount, discount_amount, final_amount, points_earned, shipping_name, shipping_phone, shipping_address, note) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(&order_id)
-        .bind(&auth.user_id)
-        .bind(total_amount)
-        .bind(discount_amount)
-        .bind(final_amount)
-        .bind(points_earned)
-        .bind(&payload.shipping_info.name)
-        .bind(&payload.shipping_info.phone)
-        .bind(&payload.shipping_info.address)
-        .bind(&payload.shipping_info.note)
-        .execute(&mut *tx).await;
+    )
+    .bind(&order_id)
+    .bind(&auth.user_id)
+    .bind(total_amount)
+    .bind(discount_amount)
+    .bind(final_amount)
+    .bind(points_earned)
+    .bind(&payload.shipping_info.name)
+    .bind(&payload.shipping_info.phone)
+    .bind(&payload.shipping_info.address)
+    .bind(&payload.shipping_info.note)
+    .execute(&mut *tx)
+    .await;
 
     if order_insert.is_err() {
         return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi tạo order")).into_response();
     }
 
-    // 2. Insert Items
+    // 2. Insert Items & TRỪ TỒN KHO (STOCK)
     for item in payload.items {
         let item_id = suid();
-        let item_insert = sqlx
-            ::query(
-                "INSERT INTO order_items (id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)"
-            )
-            .bind(item_id)
-            .bind(&order_id)
-            .bind(item.product_id)
-            .bind(item.quantity)
-            .bind(item.price)
-            .execute(&mut *tx).await;
+        
+        // 2a. Insert Order Item
+        let item_insert = sqlx::query(
+            "INSERT INTO order_items (id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind(item_id)
+        .bind(&order_id)
+        .bind(&item.product_id)
+        .bind(item.quantity)
+        .bind(item.price)
+        .execute(&mut *tx)
+        .await;
 
         if item_insert.is_err() {
             let _ = tx.rollback().await;
             return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi thêm item")).into_response();
         }
+
+        // 2b. Trừ Tồn Kho (QUAN TRỌNG)
+        let stock_update = sqlx::query("UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?")
+            .bind(item.quantity)
+            .bind(&item.product_id)
+            .bind(item.quantity)
+            .execute(&mut *tx)
+            .await;
+            
+        match stock_update {
+            Ok(res) => {
+                if res.rows_affected() == 0 {
+                    let _ = tx.rollback().await;
+                    return (StatusCode::BAD_REQUEST, Json("Hết hàng hoặc không đủ số lượng")).into_response();
+                }
+            }
+            Err(_) => {
+                let _ = tx.rollback().await;
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi trừ tồn kho")).into_response();
+            }
+        }
     }
 
-    // 3. Update User Points + Info (Phone/Address)
-    // Sửa câu lệnh SQL để cập nhật thêm phone và address
-    let user_update = sqlx
-        ::query("UPDATE users SET phone = ?, address = ? WHERE id = ?")
-        // .bind(points_earned)  <-- XÓA DÒNG NÀY
+    // 3. Lưu thông tin liên hệ mới nhất (CHƯA CỘNG ĐIỂM)
+    let user_update = sqlx::query("UPDATE users SET phone = ?, address = ? WHERE id = ?")
         .bind(&payload.shipping_info.phone)
         .bind(&payload.shipping_info.address)
         .bind(&auth.user_id)
-        .execute(&mut *tx).await;
-
+        .execute(&mut *tx)
+        .await;
+        
     if user_update.is_err() {
-        let _ = tx.rollback().await;
-        return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi cập nhật user")).into_response();
+         let _ = tx.rollback().await;
+         return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi cập nhật user")).into_response();
     }
 
     // 4. Commit
     match tx.commit().await {
-        Ok(_) =>
-            (
-                StatusCode::CREATED,
-                Json(
-                    serde_json::json!({
+        Ok(_) => (StatusCode::CREATED, Json(serde_json::json!({
             "message": "Đặt hàng thành công",
             "order_id": order_id,
             "points_earned": points_earned,
-            "final_amount": final_amount // Trả về để tạo QR
-        })
-                ),
-            ).into_response(),
+            "final_amount": final_amount
+        }))).into_response(),
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi commit")).into_response(),
     }
 }
 
-async fn get_my_orders(State(state): State<AppState>, auth: AuthUser) -> impl IntoResponse {
-    let orders = sqlx
-        ::query_as::<_, OrderHistory>(
-            "SELECT id, final_amount, status, points_earned, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC"
-        )
-        .bind(auth.user_id)
-        .fetch_all(&state.db).await;
+async fn get_my_orders(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> impl IntoResponse {
+    let orders = sqlx::query_as::<_, OrderHistory>(
+        "SELECT id, final_amount, status, points_earned, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC"
+    )
+    .bind(auth.user_id)
+    .fetch_all(&state.db)
+    .await;
 
     match orders {
         Ok(list) => (StatusCode::OK, Json(list)).into_response(),
@@ -161,7 +175,7 @@ async fn get_my_orders(State(state): State<AppState>, auth: AuthUser) -> impl In
     }
 }
 
-// --- HANDLER MỚI: Khách xác nhận đã nhận hàng ---
+// --- HANDLER: Khách xác nhận đã nhận hàng ---
 async fn confirm_receipt(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -172,8 +186,7 @@ async fn confirm_receipt(
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json("Transaction Error")).into_response(),
     };
 
-    // 1. Kiểm tra đơn hàng (Phải thuộc về User này và đang Shipping)
-    // Lấy thêm email người dùng để gửi mail
+    // 1. Kiểm tra đơn hàng
     let order_info: Option<(String, Decimal, i32, String)> = sqlx::query_as(
         "SELECT o.status, o.final_amount, o.points_earned, u.email 
          FROM orders o 
@@ -184,33 +197,22 @@ async fn confirm_receipt(
     .bind(&auth.user_id)
     .fetch_optional(&mut *tx).await.unwrap_or(None);
 
-    if let Some((status, amount, points, email)) = order_info {
+    if let Some((status, _amount, points, email)) = order_info {
         if status == "shipping" {
             // 2. Cập nhật trạng thái -> Completed
-            let update_order = sqlx::query("UPDATE orders SET status = 'completed' WHERE id = ?")
+            let _ = sqlx::query("UPDATE orders SET status = 'completed' WHERE id = ?")
                 .bind(&id)
                 .execute(&mut *tx).await;
 
-            if update_order.is_err() {
-                let _ = tx.rollback().await;
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi update đơn")).into_response();
-            }
-
-            // 3. Cộng điểm thưởng cho User
-            let update_points = sqlx::query("UPDATE users SET points = points + ? WHERE id = ?")
+            // 3. CỘNG ĐIỂM THƯỞNG (Bây giờ mới cộng)
+            let _ = sqlx::query("UPDATE users SET points = points + ? WHERE id = ?")
                 .bind(points)
                 .bind(&auth.user_id)
                 .execute(&mut *tx).await;
 
-            if update_points.is_err() {
-                let _ = tx.rollback().await;
-                return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi cộng điểm")).into_response();
-            }
-
-            // 4. Commit & Gửi Mail
+            // 4. Commit & Gửi Mail Cảm Ơn
             if tx.commit().await.is_ok() {
-                // SỬA: Chuyển tham số sang String (thêm .to_string() hoặc clone nếu cần)
-                send_order_completed_email(email, id, amount.to_string()); // email và id đã là String rồi nên move luôn
+                send_order_thank_you_email(email, id, points); 
                 return (StatusCode::OK, Json("Đã xác nhận nhận hàng")).into_response();
             }
         } else {
@@ -222,6 +224,8 @@ async fn confirm_receipt(
 }
 
 pub fn order_routes() -> Router<AppState> {
-    Router::new().route("/", post(create_order)).route("/my", get(get_my_orders))
-    .route("/:id/receive", put(confirm_receipt))
+    Router::new()
+        .route("/", post(create_order))
+        .route("/my", get(get_my_orders))
+        .route("/:id/receive", put(confirm_receipt))
 }

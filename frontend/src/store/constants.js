@@ -6,3 +6,4 @@ export const UPDATE_CART_QUANTITY = "update_cart_quantity";
 export const CLEAR_CART = "clear_cart";
 export const SET_PRODUCTS = "set_products";
 export const SET_CATEGORIES = "set_categories"; // Mới
+export const SET_CART = "set_cart";

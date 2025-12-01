@@ -7,22 +7,19 @@ import { formatCurrency } from "../utils";
 
 export default function ProductList() {
   const [state, dispatch] = useStore();
-  const { products, categories, domain } = state;
+  const { products, categories, domain, userInfo, cart } = state; // Lấy thêm userInfo và cart
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const filterCat = searchParams.get("cat") || "all";
   const [search, setSearch] = useState("");
 
-  // --- SỬA ĐOẠN NÀY ---
   useEffect(() => {
     const loadData = async () => {
       try {
-        // 1. Tải danh sách sản phẩm
         const prodRes = await fetch(`${domain}/api/products`);
         if (prodRes.ok) dispatch(actions.set_products(await prodRes.json()));
 
-        // 2. Tải danh mục (BỊ THIẾU TRƯỚC ĐÓ)
         const catRes = await fetch(`${domain}/api/categories`);
         if (catRes.ok) dispatch(actions.set_categories(await catRes.json()));
       } catch (e) {
@@ -31,7 +28,33 @@ export default function ProductList() {
     };
     loadData();
   }, [domain, dispatch]);
-  // --------------------
+
+  // --- HÀM MỚI: Thêm nhanh vào giỏ ---
+  const handleQuickAdd = async (product, e) => {
+    e.stopPropagation(); // Ngăn chặn chuyển trang khi bấm nút cộng
+
+    // 1. Cập nhật UI ngay lập tức
+    dispatch(actions.add_to_cart(product));
+
+    // 2. Đồng bộ Server nếu đã đăng nhập
+    if (userInfo) {
+      const existingItem = cart.find((i) => i.id === product.id);
+      const newQty = (existingItem ? existingItem.quantity : 0) + 1;
+
+      try {
+        await fetch(`${domain}/api/cart`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ product_id: product.id, quantity: newQty }),
+          credentials: "include",
+        });
+      } catch (err) {
+        console.error("Lỗi đồng bộ giỏ hàng:", err);
+      }
+    }
+    // Có thể thêm Toast thông báo nhỏ ở đây nếu muốn
+  };
+  // ------------------------------------
 
   const filtered = products.filter(
     (p) =>
@@ -39,15 +62,11 @@ export default function ProductList() {
       p.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Nếu API chưa kịp tải hoặc lỗi, dùng danh mục dự phòng để không bị trống giao diện
   const displayCategories =
     categories.length > 0
       ? categories
       : [
-          //   { id: 'ic', name: 'Mạch tích hợp (IC)' },
-          //   { id: 'module', name: 'Module - Cảm biến' },
-          //   { id: 'tools', name: 'Dụng cụ sửa chữa' },
-          //   { id: 'passive', name: 'Linh kiện thụ động' }
+          // Fallback categories nếu cần
         ];
 
   return (
@@ -56,8 +75,6 @@ export default function ProductList() {
         <div className="w-full md:w-64 space-y-4">
           <div className="bg-white p-4 rounded-lg border">
             <h3 className="font-bold mb-4">Danh mục</h3>
-
-            {/* Nút Tất cả */}
             <div
               onClick={() => setSearchParams({ cat: "all" })}
               className={`cursor-pointer p-2 rounded ${
@@ -68,8 +85,6 @@ export default function ProductList() {
             >
               Tất cả
             </div>
-
-            {/* Danh sách danh mục */}
             {displayCategories.map((c) => (
               <div
                 key={c.id}
@@ -140,8 +155,8 @@ export default function ProductList() {
                         {formatCurrency(p.price)}
                       </span>
                       <Button
-                        onClick={() => dispatch(actions.add_to_cart(p))}
-                        className="!p-2 rounded-full w-10 h-10 flex items-center justify-center"
+                        onClick={(e) => handleQuickAdd(p, e)} // Gọi hàm mới
+                        className="!p-2 rounded-full w-10 h-10 flex items-center justify-center shadow-sm hover:shadow-md transition-all active:scale-90"
                       >
                         <Plus size={20} />
                       </Button>

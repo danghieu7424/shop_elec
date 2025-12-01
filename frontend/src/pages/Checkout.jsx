@@ -51,6 +51,7 @@ export default function Checkout() {
     const { total } = calculateTotal();
 
     try {
+      // 1. Tạo đơn hàng
       const res = await fetch(`${domain}/api/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -68,10 +69,22 @@ export default function Checkout() {
       const data = await res.json();
 
       if (res.ok) {
-        // Xóa giỏ hàng
+        // --- BỔ SUNG: Xóa giỏ hàng trên Server ---
+        // Gọi vòng lặp xóa từng item (Cách nhanh nhất hiện tại)
+        await Promise.all(
+          cart.map((item) =>
+            fetch(`${domain}/api/cart/${item.id}`, {
+              method: "DELETE",
+              credentials: "include",
+            })
+          )
+        );
+        // ---------------------------------------
+
+        // Xóa giỏ hàng trên Client (RAM)
         dispatch(actions.clear_cart());
 
-        // Refresh User Info (để cập nhật lại thông tin mới nếu user có sửa form)
+        // Refresh User Info
         fetch(`${domain}/api/auth/me`, { credentials: "include" })
           .then((r) => r.json())
           .then((user) => dispatch(actions.set_user_info(user)));

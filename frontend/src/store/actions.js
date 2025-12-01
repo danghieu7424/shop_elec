@@ -6,7 +6,8 @@ import {
   UPDATE_CART_QUANTITY,
   CLEAR_CART,
   SET_PRODUCTS,
-  SET_CATEGORIES
+  SET_CATEGORIES,
+  SET_CART,
 } from "./constants";
 
 export const set_is_login = (payload) => ({ type: SET_IS_LOGIN, payload });
@@ -17,3 +18,4 @@ export const update_cart_quantity = (payload) => ({ type: UPDATE_CART_QUANTITY, 
 export const clear_cart = () => ({ type: CLEAR_CART });
 export const set_products = (payload) => ({ type: SET_PRODUCTS, payload });
 export const set_categories = (payload) => ({ type: SET_CATEGORIES, payload }); // Mới
+export const set_cart = (payload) => ({ type: SET_CART, payload });

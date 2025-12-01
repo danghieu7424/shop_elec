@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useStore, actions } from './store';
 
 import Layout from './components/Layout';
@@ -14,28 +14,32 @@ import Admin from './pages/Admin';
 import Contact from './pages/Contact';
 import About from './pages/About';
 
-// Các component Cart, Checkout, Profile bạn có thể tách ra tương tự như trên
-// Tôi giả định bạn đã tách chúng vào file tương ứng trong folder pages/
-
 export default function MainContent() {
   const [state, dispatch] = useStore();
   const { domain } = state;
 
   useEffect(() => {
-    // 1. Check Auth
-    const checkAuth = async () => {
+    const initData = async () => {
         try {
-            const res = await fetch(`${domain}/api/auth/me`, { credentials: 'include' });
-            if (res.ok) {
-                const userData = await res.json();
+            // 1. Check Auth & Lấy Giỏ Hàng (Chạy song song cho nhanh)
+            // Lưu ý: Logic ở đây là check auth trước, nếu OK mới lấy cart
+            const userRes = await fetch(`${domain}/api/auth/me`, { credentials: 'include' });
+            
+            if (userRes.ok) {
+                const userData = await userRes.json();
                 dispatch(actions.set_user_info(userData));
+
+                // --- QUAN TRỌNG: Nếu đã login, tải giỏ hàng từ Server ---
+                const cartRes = await fetch(`${domain}/api/cart`, { credentials: 'include' });
+                if (cartRes.ok) {
+                    const cartData = await cartRes.json();
+                    dispatch(actions.set_cart(cartData));
+                }
             }
-        } catch (e) { console.error("Guest mode"); }
-    };
-    
-    // 2. Fetch Initial Data (Categories, Products)
-    const fetchData = async () => {
+        } catch (e) { console.log("Guest mode"); }
+
         try {
+            // 2. Fetch Danh mục & Sản phẩm
             const [catRes, prodRes] = await Promise.all([
                 fetch(`${domain}/api/categories`),
                 fetch(`${domain}/api/products`)
@@ -45,8 +49,7 @@ export default function MainContent() {
         } catch(e) { console.error("Init data error", e); }
     };
 
-    checkAuth();
-    fetchData();
+    initData();
     
     // Load Google Script
     const script = document.createElement('script');
@@ -67,10 +70,9 @@ export default function MainContent() {
           <Route path="cart" element={<Cart />} />
           <Route path="login" element={<Login />} />
           
-          {/* Protected Routes (Basic check inside component or wrapper) */}
           <Route path="checkout" element={<Checkout />} />
           <Route path="profile" element={<Profile />} />
-         <Route path="contact" element={<Contact />} />
+          <Route path="contact" element={<Contact />} />
           <Route path="about" element={<About />} />
           
           <Route path="admin" element={<Admin />} />

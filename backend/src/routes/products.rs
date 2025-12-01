@@ -51,7 +51,7 @@ async fn get_products(
     Query(filter): Query<ProductFilter>
 ) -> impl IntoResponse {
     // SELECT * sẽ tự động lấy luôn các cột mới (specs, rating...)
-    let mut sql = "SELECT * FROM products WHERE 1=1".to_string();
+    let mut sql = "SELECT * FROM products WHERE (is_deleted = FALSE OR is_deleted IS NULL)".to_string();
     
     if let Some(cat_id) = &filter.category_id {
         if cat_id != "all" {
