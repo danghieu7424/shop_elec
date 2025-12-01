@@ -362,7 +362,27 @@ async fn get_analytics(State(state): State<AppState>, _: AdminUser) -> impl Into
         .fetch_one(&state.db).await
         .unwrap_or((0,));
 
-    let top_prod = "ESP32 WiFi".to_string();
+    let top_prod_result: Result<Option<(String,)>, _> = sqlx::query_as(
+        "SELECT p.name 
+         FROM order_items oi
+         JOIN products p ON oi.product_id = p.id
+         JOIN orders o ON oi.order_id = o.id
+         WHERE o.status != 'cancelled' -- Chỉ tính các đơn chưa bị hủy
+         GROUP BY p.id, p.name
+         ORDER BY SUM(oi.quantity) DESC
+         LIMIT 1"
+    )
+    .fetch_optional(&state.db)
+    .await;
+
+    let top_prod = match top_prod_result {
+        Ok(Some((name,))) => name,
+        Ok(None) => "Chưa có dữ liệu".to_string(),
+        Err(e) => {
+            println!("Lỗi tính top product: {:?}", e);
+            "Lỗi".to_string()
+        }
+    };
 
     let data = AnalyticsData {
         revenue_month: revenue.0.unwrap_or(Decimal::ZERO).to_f64().unwrap_or(0.0),
