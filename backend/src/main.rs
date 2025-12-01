@@ -19,7 +19,7 @@ use std::path::Path;
 mod utils;
 mod routes;
 // use routes::{ auth, user };
-use routes::{ auth, categories, products, orders, admin, reviews, upload, cart };
+use routes::{ auth, categories, products, orders, admin, reviews, upload, cart, contact };
 
 // 2. Phục hồi AppState (AppState cần pub để được dùng trong module user)
 #[derive(Clone)]
@@ -159,6 +159,7 @@ async fn main() {
         .nest("/api/admin", admin::admin_routes())
         .nest("/api/upload", upload::upload_routes())
         .nest("/api/cart", cart::cart_routes())
+        .nest("/api/contact", contact::contact_routes())
 
         // Các route còn lại trong main
 

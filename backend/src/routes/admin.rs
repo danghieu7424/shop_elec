@@ -374,6 +374,58 @@ async fn get_analytics(State(state): State<AppState>, _: AdminUser) -> impl Into
     (StatusCode::OK, Json(data)).into_response()
 }
 
+// --- STRUCT CONTACT ---
+#[derive(Debug, Serialize, FromRow)]
+pub struct ContactItem {
+    pub id: String,
+    pub user_id: Option<String>,
+    pub user_name: Option<String>, // Lấy tên nếu có tài khoản
+    pub email: String,
+    pub message: String,
+    pub status: String,
+    pub created_at: Option<chrono::NaiveDateTime>,
+}
+
+// --- HANDLERS CONTACT ---
+
+// 1. Lấy danh sách liên hệ (Mới nhất lên đầu)
+async fn get_all_contacts(State(state): State<AppState>, _: AdminUser) -> impl IntoResponse {
+    let sql = "
+        SELECT c.id, c.user_id, u.name as user_name, c.email, c.message, c.status, c.created_at 
+        FROM contacts c
+        LEFT JOIN users u ON c.user_id = u.id
+        ORDER BY c.created_at DESC
+    ";
+    
+    let contacts = sqlx::query_as::<_, ContactItem>(sql)
+        .fetch_all(&state.db)
+        .await;
+
+    match contacts {
+        Ok(data) => (StatusCode::OK, Json(data)).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json("Error")).into_response(),
+    }
+}
+
+// 2. Cập nhật trạng thái (Đã xử lý / Chưa xử lý)
+async fn update_contact_status(
+    State(state): State<AppState>,
+    _: AdminUser,
+    Path(id): Path<String>,
+    Json(payload): Json<UpdateStatusReq> // Tái sử dụng struct UpdateStatusReq cũ
+) -> impl IntoResponse {
+    let res = sqlx::query("UPDATE contacts SET status = ? WHERE id = ?")
+        .bind(payload.status)
+        .bind(id)
+        .execute(&state.db)
+        .await;
+
+    match res {
+        Ok(_) => (StatusCode::OK, Json("Updated")).into_response(),
+        Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json("Error")).into_response(),
+    }
+}
+
 // --- ROUTER ---
 pub fn admin_routes() -> Router<AppState> {
     Router::new()
@@ -384,4 +436,6 @@ pub fn admin_routes() -> Router<AppState> {
         .route("/users", get(get_all_users))
         .route("/settings", get(get_settings).post(update_settings))
         .route("/analytics", get(get_analytics))
+        .route("/contacts", get(get_all_contacts))             // <-- Thêm
+        .route("/contacts/:id/status", put(update_contact_status))
 }

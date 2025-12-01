@@ -17,6 +17,8 @@ import {
   ChevronRight,
   Edit,
   Search,
+  MessageSquare,
+  Mail,
 } from "lucide-react";
 import { useStore } from "../store";
 import { Button, Card, Badge } from "../components/UI";
@@ -123,6 +125,7 @@ export default function Admin() {
   const [activeTab, setActiveTab] = useState("products");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [contacts, setContacts] = useState([]);
 
   // Data States
   const [products, setProducts] = useState([]);
@@ -177,6 +180,9 @@ export default function Admin() {
       } else if (tab === "analytics") {
         const res = await fetch(`${domain}/api/admin/analytics`, opts);
         if (res.ok) setAnalytics(await res.json());
+      } else if (tab === "contacts") {
+        const res = await fetch(`${domain}/api/admin/contacts`, opts);
+        if (res.ok) setContacts(await res.json());
       }
     } catch (e) {
       console.error("Fetch Error:", e);
@@ -190,6 +196,22 @@ export default function Admin() {
         ⛔ Truy cập bị từ chối.
       </div>
     );
+
+  const updateContactStatus = async (id, newStatus) => {
+    await fetch(`${domain}/api/admin/contacts/${id}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+      credentials: "include",
+    });
+    fetchData("contacts");
+  };
+
+  const handleReplyMail = (email) => {
+    // Mở trình duyệt mail mặc định
+    // console.log("Replying to:", email);
+    window.location.href = `mailto:${email}?subject=Phản hồi từ ElectroShop`;
+  };
 
   // --- HELPERS ---
   const handleSpecChange = (index, field, value) => {
@@ -779,6 +801,71 @@ export default function Admin() {
           </div>
         );
 
+      case "contacts":
+        return (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold">Phản hồi khách hàng</h2>
+            <div className="space-y-4">
+              {contacts.map((c) => (
+                <Card
+                  key={c.id}
+                  className="p-5 flex flex-col md:flex-row gap-4 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-bold text-gray-800">
+                        {c.user_name || "Khách vãng lai"}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        • {new Date(c.created_at).toLocaleDateString("vi-VN")}
+                      </span>
+                    </div>
+                    <div className="text-sm text-blue-600 font-medium mb-2 flex items-center gap-1">
+                      <Mail size={14} /> {c.email}
+                    </div>
+                    <div className="bg-gray-50 p-3 rounded-lg text-gray-700 text-sm border">
+                      {c.message}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-row md:flex-col items-center md:items-end justify-between gap-3 min-w-[150px]">
+                    <Badge
+                      color={c.status === "processed" ? "green" : "yellow"}
+                    >
+                      {c.status === "processed" ? "Đã xử lý" : "Chờ xử lý"}
+                    </Badge>
+
+                    <div className="flex flex-col gap-2 w-full md:w-auto">
+                      <Button
+                        size="sm"
+                        onClick={() => handleReplyMail(c.email)}
+                        className="bg-white border border-gray-300 text-black hover:bg-gray-50 flex items-center justify-center gap-2"
+                      >
+                        <Mail size={16} /> Trả lời
+                      </Button>
+
+                      {c.status === "pending" && (
+                        <Button
+                          size="sm"
+                          onClick={() => updateContactStatus(c.id, "processed")}
+                          className="bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          Đánh dấu xong
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))}
+              {contacts.length === 0 && (
+                <div className="text-center text-gray-500 py-10">
+                  Chưa có tin nhắn nào
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
       case "settings":
         return (
           <div className="max-w-2xl space-y-6">
@@ -834,12 +921,18 @@ export default function Admin() {
     { id: "loyalty", label: "Điểm thưởng", icon: <Star size={20} /> },
     { id: "analytics", label: "Thống kê", icon: <BarChart2 size={20} /> },
     { id: "settings", label: "Cấu hình", icon: <Settings size={20} /> },
+    {
+      id: "contacts",
+      label: "Phản hồi & LH",
+      icon: <MessageSquare size={20} />,
+    },
   ];
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-sans">
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 w-full bg-white z-40 border-b px-4 py-3 flex items-center justify-between shadow-sm">
+
+      <div className="md:hidden fixed w-full bg-white z-40 border-b px-4 py-3 flex items-center justify-between shadow-sm">
         <div className="font-bold text-blue-600 flex items-center gap-2">
           <LayoutDashboard /> Admin
         </div>

@@ -5,6 +5,7 @@ pub mod products;
 pub mod reviews;
 pub mod orders;
 pub mod cart;
+pub mod contact;
 pub mod admin; // Module dành riêng cho admin
 // Re-export để dễ dùng nếu cần
 pub use auth::AuthUser;
