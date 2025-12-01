@@ -227,21 +227,52 @@ async fn confirm_receipt(
 
             // 3.1 --- THÊM ĐOẠN NÀY: CẬP NHẬT LEVEL TỰ ĐỘNG ---
             // Logic: Diamond(10000), Gold(5000), Silver(1000), Bronze(<1000)
-            let _ = sqlx
-                ::query(
-                    r#"
+           // 1. Lấy các mốc điểm từ bảng settings
+            // Chúng ta lấy 3 dòng cấu hình cùng lúc
+            let settings_rows: Vec<(String, Option<String>)> = sqlx::query_as(
+                "SELECT id, value FROM settings WHERE id IN ('level_silver', 'level_gold', 'level_diamond')"
+            )
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap_or(vec![]);
+
+            // 2. Đặt giá trị mặc định (đề phòng chưa config trong DB)
+            let mut s_silver = 1000;
+            let mut s_gold = 5000;
+            let mut s_diamond = 10000;
+
+            // 3. Parse dữ liệu từ DB vào biến
+            for (id, value_opt) in settings_rows {
+                if let Some(val_str) = value_opt {
+                    if let Ok(val_int) = val_str.parse::<i32>() {
+                        match id.as_str() {
+                            "level_silver" => s_silver = val_int,
+                            "level_gold" => s_gold = val_int,
+                            "level_diamond" => s_diamond = val_int,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            // 4. Cập nhật Level User với các biến động
+            // Lưu ý thứ tự bind: Diamond -> Gold -> Silver -> UserID
+            let _ = sqlx::query(r#"
                 UPDATE users 
                 SET level = CASE 
-                    WHEN points >= 10000 THEN 'DIAMOND'
-                    WHEN points >= 5000 THEN 'GOLD'
-                    WHEN points >= 1000 THEN 'SILVER'
+                    WHEN points >= ? THEN 'DIAMOND'
+                    WHEN points >= ? THEN 'GOLD'
+                    WHEN points >= ? THEN 'SILVER'
                     ELSE 'BRONZE'
                 END
                 WHERE id = ?
-            "#
-                )
-                .bind(&auth.user_id)
-                .execute(&mut *tx).await;
+            "#)
+            .bind(s_diamond)  // Bind vào dấu ? thứ 1
+            .bind(s_gold)     // Bind vào dấu ? thứ 2
+            .bind(s_silver)   // Bind vào dấu ? thứ 3
+            .bind(&auth.user_id) // Bind vào dấu ? thứ 4 (WHERE id)
+            .execute(&mut *tx).await;
+
             // ------------------------------------------------
 
             // 4. Commit & Gửi Mail Cảm Ơn
