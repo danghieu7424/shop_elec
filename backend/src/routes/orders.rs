@@ -1,13 +1,14 @@
 use axum::{
-    extract::{State, Json, Path},
-    Router, routing::{post, get, put},
+    extract::{ State, Json, Path },
+    Router,
+    routing::{ post, get, put },
     http::StatusCode,
     response::IntoResponse,
 };
 use crate::AppState;
 use crate::routes::auth::AuthUser;
 use crate::utils::suid;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 use sqlx::FromRow;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
@@ -49,42 +50,44 @@ pub struct OrderHistory {
 async fn create_order(
     State(state): State<AppState>,
     auth: AuthUser,
-    Json(payload): Json<CreateOrderRequest>,
+    Json(payload): Json<CreateOrderRequest>
 ) -> impl IntoResponse {
     // Tính tổng tiền
     let mut total_amount = Decimal::new(0, 0);
     for item in &payload.items {
         total_amount += item.price * Decimal::from(item.quantity);
     }
-    
-    let discount_amount = Decimal::new(0, 0); 
+
+    let discount_amount = Decimal::new(0, 0);
     let final_amount = total_amount - discount_amount;
     let points_earned = (final_amount.to_f64().unwrap_or(0.0) / 1000.0) as i32;
 
     let mut tx = match state.db.begin().await {
         Ok(tx) => tx,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi transaction")).into_response(),
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi transaction")).into_response();
+        }
     };
 
     let order_id = suid();
 
     // 1. Insert Order
-    let order_insert = sqlx::query(
-        "INSERT INTO orders (id, user_id, total_amount, discount_amount, final_amount, points_earned, shipping_name, shipping_phone, shipping_address, note) 
+    let order_insert = sqlx
+        ::query(
+            "INSERT INTO orders (id, user_id, total_amount, discount_amount, final_amount, points_earned, shipping_name, shipping_phone, shipping_address, note) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    )
-    .bind(&order_id)
-    .bind(&auth.user_id)
-    .bind(total_amount)
-    .bind(discount_amount)
-    .bind(final_amount)
-    .bind(points_earned)
-    .bind(&payload.shipping_info.name)
-    .bind(&payload.shipping_info.phone)
-    .bind(&payload.shipping_info.address)
-    .bind(&payload.shipping_info.note)
-    .execute(&mut *tx)
-    .await;
+        )
+        .bind(&order_id)
+        .bind(&auth.user_id)
+        .bind(total_amount)
+        .bind(discount_amount)
+        .bind(final_amount)
+        .bind(points_earned)
+        .bind(&payload.shipping_info.name)
+        .bind(&payload.shipping_info.phone)
+        .bind(&payload.shipping_info.address)
+        .bind(&payload.shipping_info.note)
+        .execute(&mut *tx).await;
 
     if order_insert.is_err() {
         return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi tạo order")).into_response();
@@ -93,18 +96,18 @@ async fn create_order(
     // 2. Insert Items & TRỪ TỒN KHO (STOCK)
     for item in payload.items {
         let item_id = suid();
-        
+
         // 2a. Insert Order Item
-        let item_insert = sqlx::query(
-            "INSERT INTO order_items (id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)"
-        )
-        .bind(item_id)
-        .bind(&order_id)
-        .bind(&item.product_id)
-        .bind(item.quantity)
-        .bind(item.price)
-        .execute(&mut *tx)
-        .await;
+        let item_insert = sqlx
+            ::query(
+                "INSERT INTO order_items (id, order_id, product_id, quantity, price) VALUES (?, ?, ?, ?, ?)"
+            )
+            .bind(item_id)
+            .bind(&order_id)
+            .bind(&item.product_id)
+            .bind(item.quantity)
+            .bind(item.price)
+            .execute(&mut *tx).await;
 
         if item_insert.is_err() {
             let _ = tx.rollback().await;
@@ -112,18 +115,21 @@ async fn create_order(
         }
 
         // 2b. Trừ Tồn Kho (QUAN TRỌNG)
-        let stock_update = sqlx::query("UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?")
+        let stock_update = sqlx
+            ::query("UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?")
             .bind(item.quantity)
             .bind(&item.product_id)
             .bind(item.quantity)
-            .execute(&mut *tx)
-            .await;
-            
+            .execute(&mut *tx).await;
+
         match stock_update {
             Ok(res) => {
                 if res.rows_affected() == 0 {
                     let _ = tx.rollback().await;
-                    return (StatusCode::BAD_REQUEST, Json("Hết hàng hoặc không đủ số lượng")).into_response();
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json("Hết hàng hoặc không đủ số lượng"),
+                    ).into_response();
                 }
             }
             Err(_) => {
@@ -134,40 +140,43 @@ async fn create_order(
     }
 
     // 3. Lưu thông tin liên hệ mới nhất (CHƯA CỘNG ĐIỂM)
-    let user_update = sqlx::query("UPDATE users SET phone = ?, address = ? WHERE id = ?")
+    let user_update = sqlx
+        ::query("UPDATE users SET phone = ?, address = ? WHERE id = ?")
         .bind(&payload.shipping_info.phone)
         .bind(&payload.shipping_info.address)
         .bind(&auth.user_id)
-        .execute(&mut *tx)
-        .await;
-        
+        .execute(&mut *tx).await;
+
     if user_update.is_err() {
-         let _ = tx.rollback().await;
-         return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi cập nhật user")).into_response();
+        let _ = tx.rollback().await;
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi cập nhật user")).into_response();
     }
 
     // 4. Commit
     match tx.commit().await {
-        Ok(_) => (StatusCode::CREATED, Json(serde_json::json!({
+        Ok(_) =>
+            (
+                StatusCode::CREATED,
+                Json(
+                    serde_json::json!({
             "message": "Đặt hàng thành công",
             "order_id": order_id,
             "points_earned": points_earned,
             "final_amount": final_amount
-        }))).into_response(),
+        })
+                ),
+            ).into_response(),
         Err(_) => (StatusCode::INTERNAL_SERVER_ERROR, Json("Lỗi commit")).into_response(),
     }
 }
 
-async fn get_my_orders(
-    State(state): State<AppState>,
-    auth: AuthUser,
-) -> impl IntoResponse {
-    let orders = sqlx::query_as::<_, OrderHistory>(
-        "SELECT id, final_amount, status, points_earned, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC"
-    )
-    .bind(auth.user_id)
-    .fetch_all(&state.db)
-    .await;
+async fn get_my_orders(State(state): State<AppState>, auth: AuthUser) -> impl IntoResponse {
+    let orders = sqlx
+        ::query_as::<_, OrderHistory>(
+            "SELECT id, final_amount, status, points_earned, created_at FROM orders WHERE user_id = ? ORDER BY created_at DESC"
+        )
+        .bind(auth.user_id)
+        .fetch_all(&state.db).await;
 
     match orders {
         Ok(list) => (StatusCode::OK, Json(list)).into_response(),
@@ -183,40 +192,68 @@ async fn confirm_receipt(
 ) -> impl IntoResponse {
     let mut tx = match state.db.begin().await {
         Ok(tx) => tx,
-        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, Json("Transaction Error")).into_response(),
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json("Transaction Error")).into_response();
+        }
     };
 
     // 1. Kiểm tra đơn hàng
-    let order_info: Option<(String, Decimal, i32, String)> = sqlx::query_as(
-        "SELECT o.status, o.final_amount, o.points_earned, u.email 
+    let order_info: Option<(String, Decimal, i32, String)> = sqlx
+        ::query_as(
+            "SELECT o.status, o.final_amount, o.points_earned, u.email 
          FROM orders o 
          JOIN users u ON o.user_id = u.id 
          WHERE o.id = ? AND o.user_id = ?"
-    )
-    .bind(&id)
-    .bind(&auth.user_id)
-    .fetch_optional(&mut *tx).await.unwrap_or(None);
+        )
+        .bind(&id)
+        .bind(&auth.user_id)
+        .fetch_optional(&mut *tx).await
+        .unwrap_or(None);
 
     if let Some((status, _amount, points, email)) = order_info {
         if status == "shipping" {
             // 2. Cập nhật trạng thái -> Completed
-            let _ = sqlx::query("UPDATE orders SET status = 'completed' WHERE id = ?")
+            let _ = sqlx
+                ::query("UPDATE orders SET status = 'completed' WHERE id = ?")
                 .bind(&id)
                 .execute(&mut *tx).await;
 
             // 3. CỘNG ĐIỂM THƯỞNG (Bây giờ mới cộng)
-            let _ = sqlx::query("UPDATE users SET points = points + ? WHERE id = ?")
+            let _ = sqlx
+                ::query("UPDATE users SET points = points + ? WHERE id = ?")
                 .bind(points)
                 .bind(&auth.user_id)
                 .execute(&mut *tx).await;
 
+            // 3.1 --- THÊM ĐOẠN NÀY: CẬP NHẬT LEVEL TỰ ĐỘNG ---
+            // Logic: Diamond(10000), Gold(5000), Silver(1000), Bronze(<1000)
+            let _ = sqlx
+                ::query(
+                    r#"
+                UPDATE users 
+                SET level = CASE 
+                    WHEN points >= 10000 THEN 'DIAMOND'
+                    WHEN points >= 5000 THEN 'GOLD'
+                    WHEN points >= 1000 THEN 'SILVER'
+                    ELSE 'BRONZE'
+                END
+                WHERE id = ?
+            "#
+                )
+                .bind(&auth.user_id)
+                .execute(&mut *tx).await;
+            // ------------------------------------------------
+
             // 4. Commit & Gửi Mail Cảm Ơn
             if tx.commit().await.is_ok() {
-                send_order_thank_you_email(email, id, points); 
+                send_order_thank_you_email(email, id, points);
                 return (StatusCode::OK, Json("Đã xác nhận nhận hàng")).into_response();
             }
         } else {
-            return (StatusCode::BAD_REQUEST, Json("Trạng thái đơn hàng không hợp lệ")).into_response();
+            return (
+                StatusCode::BAD_REQUEST,
+                Json("Trạng thái đơn hàng không hợp lệ"),
+            ).into_response();
         }
     }
 
